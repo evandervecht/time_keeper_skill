@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"read a file"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x"}}],"usage":{"input_tokens":20,"output_tokens":15,"cache_read_input_tokens":200,"cache_creation_input_tokens":10}}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"file contents"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":22,"output_tokens":4,"cache_read_input_tokens":210,"cache_creation_input_tokens":0}}}
