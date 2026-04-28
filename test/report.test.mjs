@@ -72,6 +72,31 @@ test('report filters by label', async () => {
   );
 });
 
+test('idle events aggregate into total, per-session, and per-tag', async () => {
+  const start = '2026-04-28T10:00:00Z';
+  const end = '2026-04-28T11:00:00Z';
+  await withJsonl(
+    [
+      { ts: start, event: 'tag', session_id: 's1', label: 'foo', source: 'slash', previous_label: null },
+      { ts: '2026-04-28T10:15:00Z', event: 'idle', session_id: 's1', label: 'foo', duration_ms: 60_000 },
+      { ts: '2026-04-28T10:45:00Z', event: 'idle', session_id: 's1', label: 'foo', duration_ms: 120_000 },
+      {
+        ts: end, event: 'session', session_id: 's1',
+        started_at: start, duration_ms: 3_600_000,
+        input_tokens: 10, output_tokens: 5,
+        cache_read_tokens: 0, cache_creation_tokens: 0,
+        tags_touched: ['foo'],
+      },
+    ],
+    async (p) => {
+      const r = await buildReport(p, { scope: 'all' });
+      assert.equal(r.totalIdleMs, 180_000);
+      assert.equal(r.bySession[0].idle_ms, 180_000);
+      assert.equal(r.perLabel.foo.idleMs, 180_000);
+    }
+  );
+});
+
 test('report includes in-flight session from currentState when no session row exists', async () => {
   const tagTs = '2026-04-28T10:00:00Z';
   const now = new Date('2026-04-28T11:00:00Z');

@@ -23,10 +23,11 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     if (!row.session_id) continue;
     const rowTs = new Date(row.ts);
     if (rowTs < cutoff) continue;
-    if (!perSession.has(row.session_id)) perSession.set(row.session_id, { tags: [], session: null });
+    if (!perSession.has(row.session_id)) perSession.set(row.session_id, { tags: [], idle: [], session: null });
     const entry = perSession.get(row.session_id);
     if (row.event === 'tag') entry.tags.push(row);
     if (row.event === 'session') entry.session = row;
+    if (row.event === 'idle') entry.idle.push(row);
   }
 
   if (currentState?.session_id && !perSession.get(currentState.session_id)?.session) {
@@ -50,12 +51,13 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       };
       perSession.set(sid, entry);
     }
+    entry.idle = entry.idle ?? [];
   }
 
   const report = empty();
   const perLabel = {};
 
-  for (const { tags, session } of perSession.values()) {
+  for (const { tags, session, idle } of perSession.values()) {
     if (!session) continue;
     report.sessions++;
     report.totalDurationMs += session.duration_ms ?? 0;
@@ -64,6 +66,9 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     report.totalCacheReadTokens += session.cache_read_tokens ?? 0;
     report.totalCacheCreationTokens += session.cache_creation_tokens ?? 0;
 
+    const sessionIdleMs = (idle ?? []).reduce((s, r) => s + (r.duration_ms ?? 0), 0);
+    report.totalIdleMs += sessionIdleMs;
+
     const sessionTokens =
       (session.input_tokens ?? 0) + (session.output_tokens ?? 0) +
       (session.cache_read_tokens ?? 0) + (session.cache_creation_tokens ?? 0);
@@ -71,6 +76,7 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       session_id: session.session_id,
       date: (session.started_at ?? session.ts).slice(0, 10),
       duration_ms: session.duration_ms ?? 0,
+      idle_ms: sessionIdleMs,
       tokens: sessionTokens,
       git_branch: session.git_branch ?? null,
       in_flight: !!session.in_flight,
@@ -89,10 +95,19 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     for (const b of bounds) {
       if (!b.label) continue;
       if (label && b.label !== label) continue;
-      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set(), tokens: 0 };
+      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set(), tokens: 0, idleMs: 0 };
       perLabel[b.label].durationMs += b.ms;
       perLabel[b.label].sessions.add(session.session_id);
       perLabel[b.label].tokens += Math.round(sessionTokens * (b.ms / denom));
+    }
+
+    for (const idleRow of idle ?? []) {
+      const lbl = idleRow.label;
+      if (!lbl) continue;
+      if (label && lbl !== label) continue;
+      if (!perLabel[lbl]) perLabel[lbl] = { durationMs: 0, sessions: new Set(), tokens: 0, idleMs: 0 };
+      perLabel[lbl].idleMs += idleRow.duration_ms ?? 0;
+      perLabel[lbl].sessions.add(session.session_id);
     }
   }
 
@@ -101,6 +116,7 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       durationMs: perLabel[k].durationMs,
       sessions: perLabel[k].sessions.size,
       tokens: perLabel[k].tokens,
+      idleMs: perLabel[k].idleMs,
     };
   }
   report.perLabel = perLabel;
@@ -111,6 +127,7 @@ function empty() {
   return {
     sessions: 0,
     totalDurationMs: 0,
+    totalIdleMs: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,

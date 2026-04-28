@@ -69,7 +69,9 @@ async function cmdReport(cwd, args) {
   const lines = [`time-keeper report (${scope})`];
   if (currentState) lines.push('(includes current in-flight session)');
 
-  lines.push('', 'OVERALL', `  ${r.sessions} session(s)  ${fmtDuration(r.totalDurationMs)}  ${fmtTokens(totalTokens)} tokens`);
+  const idleSuffix = (ms) => ms > 0 ? ` (${fmtDuration(ms)} idle)` : '';
+
+  lines.push('', 'OVERALL', `  ${r.sessions} session(s)  ${fmtDuration(r.totalDurationMs)}${idleSuffix(r.totalIdleMs)}  ${fmtTokens(totalTokens)} tokens`);
 
   if (r.bySession.length) {
     lines.push('', 'PER SESSION');
@@ -77,7 +79,7 @@ async function cmdReport(cwd, args) {
     for (const s of sessions) {
       const flag = s.in_flight ? '  ⏱ in-flight' : '';
       const branch = s.git_branch ? `  (${s.git_branch})` : '';
-      lines.push(`  ${s.date}  ${fmtDuration(s.duration_ms)}  ${fmtTokens(s.tokens)} tokens${branch}${flag}`);
+      lines.push(`  ${s.date}  ${fmtDuration(s.duration_ms)}${idleSuffix(s.idle_ms)}  ${fmtTokens(s.tokens)} tokens${branch}${flag}`);
     }
   }
 
@@ -85,7 +87,7 @@ async function cmdReport(cwd, args) {
   if (labels.length) {
     lines.push('', 'PER TAG');
     for (const [name, v] of labels) {
-      lines.push(`  ${name}  ${fmtDuration(v.durationMs)}  ~${fmtTokens(v.tokens)} tokens (est, pro-rated by duration)`);
+      lines.push(`  ${name}  ${fmtDuration(v.durationMs)}${idleSuffix(v.idleMs)}  ~${fmtTokens(v.tokens)} tokens (est, pro-rated by duration)`);
     }
   } else {
     lines.push('', '(no tagged segments in scope)');
