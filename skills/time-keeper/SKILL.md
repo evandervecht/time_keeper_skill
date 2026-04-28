@@ -19,15 +19,34 @@ Any of:
 
 ## Behaviors
 
-### 1. Natural-language tag recognition
+### 1. Auto-tag on every user message
 
-Triggers: phrases like "I'm starting on…", "let me fix…", "switching to…", "next let's do…", "moving on to…".
+On every user message, **before doing the work**, classify the request into one of three buckets:
 
-Response: ask once, never tag silently.
+- **OLD** — feedback on the current task, follow-up step, retry, fix to a bug already in progress, or a question about it. → No tag action. Just do the work.
+- **NEW** — clearly different feature/bug, switch to a different area or file, or session has no active label. → Tag automatically *before starting work* and announce it on a single line:
+  > `⏱ tagging this as `<inferred-label>`` *(then run `/time-keeper:start <label>` or `/time-keeper:tag <label>` if one is already active)*
+- **UNCLEAR** — could be either, or contains a mix. → Ask:
+  > Is this part of `<current-label>`, or a new segment? *(suggested name: `<inferred-label>`)*
 
-> Want me to start a time-keeper segment for `<inferred-label>`?
+Pick a short kebab-case label derived from the user's phrasing. If you tag and the user pushes back ("no, that's part of X"), undo with `/time-keeper:stop` or re-tag with the right label.
 
-On yes, invoke `/time-keeper:start <label>` (or `/time-keeper:tag <label>` if one is already active). Pick a short kebab-case label derived from the user's phrasing.
+#### Classification heuristics
+
+| Signal | Bucket |
+|--------|--------|
+| "try again", "different flag", "the test is still failing", "fix the typo" | OLD |
+| "ok now also...", "let me also...", "next let's...", "switch to...", "moving on to..." | NEW |
+| "build/implement/fix X" where X is unrelated to current label | NEW |
+| New file or area, no overlap with current task | NEW (likely) |
+| Same files, follow-up step in the same plan | OLD |
+| Greeting, status check, meta question ("how long have we been at this?") | OLD (no tag action) |
+| Multiple distinct asks in one message | UNCLEAR — ask which to tag |
+| Session has no active label and user starts work | NEW |
+
+#### Don't over-tag
+
+A tag is a unit of work, not a micro-step. "Add a comment", "rename this var", "run the tests", "show me the diff" don't get their own tags — they fold into the current one.
 
 ### 2. Git-branch fallback (once per session)
 
@@ -61,7 +80,9 @@ One nudge per condition per label. No repeat nagging.
 ### 5. Silent by default
 
 No pace chatter. No mid-session token announcements. No budget alerts. The only user-visible outputs are:
-- Tag confirmation asks (behaviors 1 and 2),
+- The one-line auto-tag announcement when new work is detected (behavior 1),
+- Disambiguation question when classification is unclear (behavior 1),
+- The branch-name offer once per session (behavior 2),
 - Reports when asked (behavior 3),
 - The single thrash nudge (behavior 4),
 - The session-end recap in `CLAUDE.md` (written automatically by the plugin).
@@ -70,24 +91,29 @@ No pace chatter. No mid-session token announcements. No budget alerts. The only 
 
 | Situation | Action |
 |-----------|--------|
-| User mentions new work | Ask to start a tag. Never tag silently. |
+| Clear NEW work | Auto-tag, announce on one line, then do the work. |
+| Clear continuation of current label | No tag action. |
+| Ambiguous (could be either) | Ask the user before doing the work. |
 | Session start, no tag, non-default branch | Offer branch-name tag **once**. |
 | User asks about time/tokens | Run `/time-keeper:report`, relay output. |
 | 3 retries on same step OR >45 min OR scope drift | Single nudge. |
-| Anything else | Silent. |
+| Greeting/meta question/single micro-step | Silent. |
 
 ## Rationalization table
 
 | Excuse | Reality |
 |--------|---------|
-| "I'll batch the tagging at the end" | Untagged time collapses into an unlabeled blob. Confirm the tag now. |
-| "User seems busy, don't interrupt" | A one-line confirmation costs nothing; silent tagging costs trust. Always ask. |
+| "I'll batch the tagging at the end" | Tags must come **before** the work. Per-tag tokens are bucketed by turn timestamp — tagging after-the-fact attributes the tokens to whatever was active before. |
+| "I'll wait until I'm sure before tagging" | Don't. If clearly NEW, tag now and announce on one line. If unclear, ask. Sitting on it lands tokens in the wrong tag. |
+| "I'll just continue under the old tag, it's close enough" | If the work has clearly shifted, old-tag data gets polluted. When the heuristics say NEW, switch. |
+| "I'll re-tag every micro-step to be precise" | Tags are units of work, not micro-steps. "Run the tests" stays under the current tag. |
 | "User is frustrated, nudging would be rude" | That's exactly when the thrash nudge earns its keep. Be gentle but nudge. |
 | "I'll guess the time from conversation" | Read `.claude/time-keeper.jsonl`. Always. |
 | "I'll re-offer the branch tag later in case they change their mind" | One offer per session. Don't nag. |
 
 ## Red flags — STOP
 
-- You tagged a segment without asking → undo with `/time-keeper:stop` and confirm with the user.
+- You tagged something the user disagrees with → run `/time-keeper:stop` (or re-tag with the right label) and apologize briefly.
+- You skipped tagging a clear NEW segment because the user "seemed busy" → tag now, announce on one line.
 - You answered a time question from memory instead of the log → read the log and correct.
 - You nudged three times in one session on the same label → silence yourself.
