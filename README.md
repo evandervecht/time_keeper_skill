@@ -32,6 +32,8 @@ If you do nothing else, you already have session-level time and token history.
 
 Tagging marks the current chunk of work as a specific feature or bug ("fix-auth-bug", "refactor-router"). Per-tag time shows up in reports and the CLAUDE.md recap.
 
+> **⚠ Tag before the work, not after.** Per-tag tokens are computed from the assistant turns whose timestamp falls inside the tag's window. If you tag *after* you finish a piece of work (for example, naming a tag after a commit you just made), the tokens that produced that work belong to the *previous* tag — the new tag stays at 0 until your next round of work happens under it. Treat tags as labels for the work *about to start*, the same way you'd write a branch name before opening it.
+
 ### 1. Slash command (explicit)
 
 ```
