@@ -64,6 +64,18 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     report.totalCacheReadTokens += session.cache_read_tokens ?? 0;
     report.totalCacheCreationTokens += session.cache_creation_tokens ?? 0;
 
+    const sessionTokens =
+      (session.input_tokens ?? 0) + (session.output_tokens ?? 0) +
+      (session.cache_read_tokens ?? 0) + (session.cache_creation_tokens ?? 0);
+    report.bySession.push({
+      session_id: session.session_id,
+      date: (session.started_at ?? session.ts).slice(0, 10),
+      duration_ms: session.duration_ms ?? 0,
+      tokens: sessionTokens,
+      git_branch: session.git_branch ?? null,
+      in_flight: !!session.in_flight,
+    });
+
     const sortedTags = [...tags].sort((a, b) => new Date(a.ts) - new Date(b.ts));
     const endTs = new Date(session.ts);
     const bounds = [];
@@ -72,17 +84,24 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       const end = i + 1 < sortedTags.length ? new Date(sortedTags[i + 1].ts) : endTs;
       bounds.push({ label: sortedTags[i].label, ms: end - start });
     }
+
+    const denom = session.duration_ms || 1;
     for (const b of bounds) {
       if (!b.label) continue;
       if (label && b.label !== label) continue;
-      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set() };
+      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set(), tokens: 0 };
       perLabel[b.label].durationMs += b.ms;
       perLabel[b.label].sessions.add(session.session_id);
+      perLabel[b.label].tokens += Math.round(sessionTokens * (b.ms / denom));
     }
   }
 
   for (const k of Object.keys(perLabel)) {
-    perLabel[k] = { durationMs: perLabel[k].durationMs, sessions: perLabel[k].sessions.size };
+    perLabel[k] = {
+      durationMs: perLabel[k].durationMs,
+      sessions: perLabel[k].sessions.size,
+      tokens: perLabel[k].tokens,
+    };
   }
   report.perLabel = perLabel;
   return report;
@@ -96,6 +115,7 @@ function empty() {
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,
     totalCacheCreationTokens: 0,
+    bySession: [],
     perLabel: {},
   };
 }

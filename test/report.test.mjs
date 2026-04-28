@@ -40,6 +40,13 @@ test('report groups session totals by label via tag timestamps', async () => {
       assert.equal(r.totalInputTokens, 100);
       assert.equal(r.perLabel.foo.durationMs, 30 * 60_000);
       assert.equal(r.perLabel.bar.durationMs, 30 * 60_000);
+      assert.equal(r.bySession.length, 1);
+      assert.equal(r.bySession[0].session_id, 's1');
+      assert.equal(r.bySession[0].tokens, 100 + 50 + 1000 + 20);
+      // pro-rated tokens per tag (50/50 duration split)
+      const expected = Math.round((100 + 50 + 1000 + 20) / 2);
+      assert.equal(r.perLabel.foo.tokens, expected);
+      assert.equal(r.perLabel.bar.tokens, expected);
     }
   );
 });

@@ -65,16 +65,32 @@ async function cmdReport(cwd, args) {
   const currentState = await readState(cwd);
   const r = await buildReport(jsonlPath(cwd), { scope, label, currentState });
   const totalTokens = r.totalInputTokens + r.totalOutputTokens + r.totalCacheReadTokens + r.totalCacheCreationTokens;
-  const lines = [
-    `time-keeper report (${scope})`,
-    `sessions: ${r.sessions}  duration: ${fmtDuration(r.totalDurationMs)}  tokens: ${fmtTokens(totalTokens)}`,
-  ];
+
+  const lines = [`time-keeper report (${scope})`];
   if (currentState) lines.push('(includes current in-flight session)');
-  const labels = Object.entries(r.perLabel).sort(([, a], [, b]) => b.durationMs - a.durationMs);
-  if (labels.length === 0) lines.push('(no tagged segments in scope)');
-  for (const [name, v] of labels) {
-    lines.push(`  ${name}: ${fmtDuration(v.durationMs)} across ${v.sessions} session(s)`);
+
+  lines.push('', 'OVERALL', `  ${r.sessions} session(s)  ${fmtDuration(r.totalDurationMs)}  ${fmtTokens(totalTokens)} tokens`);
+
+  if (r.bySession.length) {
+    lines.push('', 'PER SESSION');
+    const sessions = [...r.bySession].sort((a, b) => b.date.localeCompare(a.date));
+    for (const s of sessions) {
+      const flag = s.in_flight ? '  ⏱ in-flight' : '';
+      const branch = s.git_branch ? `  (${s.git_branch})` : '';
+      lines.push(`  ${s.date}  ${fmtDuration(s.duration_ms)}  ${fmtTokens(s.tokens)} tokens${branch}${flag}`);
+    }
   }
+
+  const labels = Object.entries(r.perLabel).sort(([, a], [, b]) => b.durationMs - a.durationMs);
+  if (labels.length) {
+    lines.push('', 'PER TAG');
+    for (const [name, v] of labels) {
+      lines.push(`  ${name}  ${fmtDuration(v.durationMs)}  ~${fmtTokens(v.tokens)} tokens (est, pro-rated by duration)`);
+    }
+  } else {
+    lines.push('', '(no tagged segments in scope)');
+  }
+
   return lines.join('\n');
 }
 
