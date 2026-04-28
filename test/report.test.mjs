@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { buildReport } from '../scripts/lib/report.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 async function withJsonl(rows, fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'tk-'));
@@ -78,6 +81,27 @@ test('report includes in-flight session from currentState when no session row ex
       const r = await buildReport(p, { scope: 'all', currentState, now });
       assert.equal(r.sessions, 1);
       assert.equal(r.perLabel.wip.durationMs, 60 * 60_000);
+    }
+  );
+});
+
+test('in-flight session reports live tokens parsed from transcript_path', async () => {
+  const tagTs = '2026-04-28T10:00:00Z';
+  const now = new Date('2026-04-28T11:00:00Z');
+  const transcriptPath = path.join(here, 'fixtures', 'transcript-basic.jsonl');
+  await withJsonl(
+    [{ ts: tagTs, event: 'tag', session_id: 'live', label: 'wip', source: 'slash', previous_label: null }],
+    async (p) => {
+      const currentState = {
+        session_id: 'live',
+        started_at: '2026-04-28T09:30:00Z',
+        transcript_path: transcriptPath,
+        tag_history: [{ label: 'wip', source: 'slash', ts: tagTs }],
+      };
+      const r = await buildReport(p, { scope: 'all', currentState, now });
+      assert.equal(r.totalInputTokens, 22);
+      assert.equal(r.totalOutputTokens, 12);
+      assert.equal(r.totalCacheReadTokens, 210);
     }
   );
 });

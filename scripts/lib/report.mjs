@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { parseTranscript } from './parse-transcript.mjs';
 
 function windowStart(scope, now) {
   const d = new Date(now);
@@ -34,14 +35,16 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     const startedAt = new Date(currentState.started_at);
     const nowDate = new Date(now);
     if (startedAt >= cutoff) {
+      const liveTokens = currentState.transcript_path
+        ? await parseTranscript(currentState.transcript_path)
+        : { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 };
       entry.session = {
         ts: nowDate.toISOString(),
         event: 'session',
         session_id: sid,
         started_at: currentState.started_at,
         duration_ms: nowDate - startedAt,
-        input_tokens: 0, output_tokens: 0,
-        cache_read_tokens: 0, cache_creation_tokens: 0,
+        ...liveTokens,
         tags_touched: [...new Set((currentState.tag_history ?? []).map((t) => t.label).filter(Boolean))],
         in_flight: true,
       };
