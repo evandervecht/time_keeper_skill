@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { writeState } from './lib/state.mjs';
+import { detectGitBranch } from './lib/git.mjs';
 import { appendFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -21,11 +22,12 @@ async function main() {
   const hook = await readStdinJson();
   const cwd = hook.cwd || process.cwd();
   try {
+    const git_branch = await detectGitBranch(cwd);
     await writeState(cwd, {
       session_id: hook.session_id ?? null,
       started_at: new Date().toISOString(),
       cwd,
-      git_branch: null,
+      git_branch,
       transcript_path: hook.transcript_path ?? null,
       current_label: null,
       tag_history: [],

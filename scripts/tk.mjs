@@ -62,12 +62,14 @@ async function cmdReport(cwd, args) {
   const scope = args.includes('--week') ? 'week' : args.includes('--month') ? 'month' : 'all';
   const labelIdx = args.indexOf('--label');
   const label = labelIdx >= 0 ? args[labelIdx + 1] : null;
-  const r = await buildReport(jsonlPath(cwd), { scope, label });
+  const currentState = await readState(cwd);
+  const r = await buildReport(jsonlPath(cwd), { scope, label, currentState });
   const totalTokens = r.totalInputTokens + r.totalOutputTokens + r.totalCacheReadTokens + r.totalCacheCreationTokens;
   const lines = [
     `time-keeper report (${scope})`,
     `sessions: ${r.sessions}  duration: ${fmtDuration(r.totalDurationMs)}  tokens: ${fmtTokens(totalTokens)}`,
   ];
+  if (currentState) lines.push('(includes current in-flight session)');
   const labels = Object.entries(r.perLabel).sort(([, a], [, b]) => b.durationMs - a.durationMs);
   if (labels.length === 0) lines.push('(no tagged segments in scope)');
   for (const [name, v] of labels) {

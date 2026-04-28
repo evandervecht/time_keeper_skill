@@ -8,10 +8,10 @@ function windowStart(scope, now) {
   return d;
 }
 
-export async function buildReport(jsonlPath, { scope = 'all', label = null, now = new Date() } = {}) {
-  let raw;
+export async function buildReport(jsonlPath, { scope = 'all', label = null, now = new Date(), currentState = null } = {}) {
+  let raw = '';
   try { raw = await readFile(jsonlPath, 'utf8'); }
-  catch { return empty(); }
+  catch { /* missing file is fine — may still have currentState */ }
   const rows = raw.split('\n').filter(Boolean).map((l) => {
     try { return JSON.parse(l); } catch { return null; }
   }).filter(Boolean);
@@ -26,6 +26,27 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     const entry = perSession.get(row.session_id);
     if (row.event === 'tag') entry.tags.push(row);
     if (row.event === 'session') entry.session = row;
+  }
+
+  if (currentState?.session_id && !perSession.get(currentState.session_id)?.session) {
+    const sid = currentState.session_id;
+    const entry = perSession.get(sid) ?? { tags: [], session: null };
+    const startedAt = new Date(currentState.started_at);
+    const nowDate = new Date(now);
+    if (startedAt >= cutoff) {
+      entry.session = {
+        ts: nowDate.toISOString(),
+        event: 'session',
+        session_id: sid,
+        started_at: currentState.started_at,
+        duration_ms: nowDate - startedAt,
+        input_tokens: 0, output_tokens: 0,
+        cache_read_tokens: 0, cache_creation_tokens: 0,
+        tags_touched: [...new Set((currentState.tag_history ?? []).map((t) => t.label).filter(Boolean))],
+        in_flight: true,
+      };
+      perSession.set(sid, entry);
+    }
   }
 
   const report = empty();
