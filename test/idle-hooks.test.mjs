@@ -59,7 +59,7 @@ test('Stop sets awaiting_user_since; UserPromptSubmit writes idle row and clears
   }
 });
 
-test('UserPromptSubmit without prior Stop is a no-op', async () => {
+test('UserPromptSubmit without prior Stop writes no JSONL row but injects context', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'tk-idle-'));
   try {
     await writeState(dir, {
@@ -76,6 +76,42 @@ test('UserPromptSubmit without prior Stop is a no-op', async () => {
     let jsonl = '';
     try { jsonl = await readFile(path.join(dir, '.claude', 'time-keeper.jsonl'), 'utf8'); } catch {}
     assert.equal(jsonl, '');
+    assert.match(r.out, /\[time-keeper\]/);
+    assert.match(r.out, /No active label/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('UserPromptSubmit injects active-label context when one is set', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'tk-idle-'));
+  try {
+    await writeState(dir, {
+      session_id: 'sid',
+      started_at: new Date().toISOString(),
+      cwd: dir,
+      git_branch: null,
+      transcript_path: null,
+      current_label: 'fix-auth-bug',
+      tag_history: [{ label: 'fix-auth-bug', source: 'slash', ts: new Date().toISOString() }],
+    });
+    const r = await runHook('user-prompt-submit.mjs', { session_id: 'sid', cwd: dir }, dir);
+    assert.equal(r.code, 0);
+    assert.match(r.out, /Active label: `fix-auth-bug`/);
+    assert.match(r.out, /OLD/);
+    assert.match(r.out, /NEW/);
+    assert.match(r.out, /UNCLEAR/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('UserPromptSubmit without state file is silent (no time-keeper)', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'tk-idle-'));
+  try {
+    const r = await runHook('user-prompt-submit.mjs', { session_id: 'sid', cwd: dir }, dir);
+    assert.equal(r.code, 0);
+    assert.equal(r.out, '');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
