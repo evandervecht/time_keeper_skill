@@ -72,6 +72,57 @@ test('report filters by label', async () => {
   );
 });
 
+test('per-tag tokens use session.tag_tokens when present (exact, not pro-rated)', async () => {
+  const start = '2026-04-28T10:00:00Z';
+  const end = '2026-04-28T11:00:00Z';
+  await withJsonl(
+    [
+      { ts: start, event: 'tag', session_id: 's1', label: 'foo', source: 'slash', previous_label: null },
+      { ts: '2026-04-28T10:30:00Z', event: 'tag', session_id: 's1', label: 'bar', source: 'slash', previous_label: 'foo' },
+      {
+        ts: end, event: 'session', session_id: 's1',
+        started_at: start, duration_ms: 3_600_000,
+        input_tokens: 1000, output_tokens: 500,
+        cache_read_tokens: 0, cache_creation_tokens: 0,
+        tags_touched: ['foo', 'bar'],
+        tag_tokens: {
+          foo: { input_tokens: 900, output_tokens: 400, cache_read_tokens: 0, cache_creation_tokens: 0 },
+          bar: { input_tokens: 100, output_tokens: 100, cache_read_tokens: 0, cache_creation_tokens: 0 },
+        },
+      },
+    ],
+    async (p) => {
+      const r = await buildReport(p, { scope: 'all' });
+      assert.equal(r.perLabel.foo.tokens, 1300);
+      assert.equal(r.perLabel.bar.tokens, 200);
+      assert.equal(r.perLabel.foo.exact, true);
+      assert.equal(r.perLabel.bar.exact, true);
+    }
+  );
+});
+
+test('per-tag tokens fall back to pro-rating when tag_tokens is absent', async () => {
+  const start = '2026-04-28T10:00:00Z';
+  const end = '2026-04-28T11:00:00Z';
+  await withJsonl(
+    [
+      { ts: start, event: 'tag', session_id: 's1', label: 'foo', source: 'slash', previous_label: null },
+      {
+        ts: end, event: 'session', session_id: 's1',
+        started_at: start, duration_ms: 3_600_000,
+        input_tokens: 100, output_tokens: 50,
+        cache_read_tokens: 0, cache_creation_tokens: 0,
+        tags_touched: ['foo'],
+      },
+    ],
+    async (p) => {
+      const r = await buildReport(p, { scope: 'all' });
+      assert.equal(r.perLabel.foo.tokens, 150);
+      assert.equal(r.perLabel.foo.exact, false);
+    }
+  );
+});
+
 test('idle events aggregate into total, per-session, and per-tag', async () => {
   const start = '2026-04-28T10:00:00Z';
   const end = '2026-04-28T11:00:00Z';

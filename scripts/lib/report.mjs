@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { parseTranscript } from './parse-transcript.mjs';
+import { parseTranscript, parseTranscriptTurns, bucketTurnsByTags, UNTAGGED } from './parse-transcript.mjs';
 
 function windowStart(scope, now) {
   const d = new Date(now);
@@ -36,9 +36,16 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
     const startedAt = new Date(currentState.started_at);
     const nowDate = new Date(now);
     if (startedAt >= cutoff) {
-      const liveTokens = currentState.transcript_path
-        ? await parseTranscript(currentState.transcript_path)
-        : { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 };
+      const turns = currentState.transcript_path
+        ? await parseTranscriptTurns(currentState.transcript_path)
+        : [];
+      const liveTokens = turns.reduce((acc, t) => ({
+        input_tokens: acc.input_tokens + t.input_tokens,
+        output_tokens: acc.output_tokens + t.output_tokens,
+        cache_read_tokens: acc.cache_read_tokens + t.cache_read_tokens,
+        cache_creation_tokens: acc.cache_creation_tokens + t.cache_creation_tokens,
+      }), { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 });
+      const tag_tokens = bucketTurnsByTags(turns, currentState.tag_history ?? [], nowDate.toISOString());
       entry.session = {
         ts: nowDate.toISOString(),
         event: 'session',
@@ -46,6 +53,7 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
         started_at: currentState.started_at,
         duration_ms: nowDate - startedAt,
         ...liveTokens,
+        tag_tokens,
         tags_touched: [...new Set((currentState.tag_history ?? []).map((t) => t.label).filter(Boolean))],
         in_flight: true,
       };
@@ -91,14 +99,27 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       bounds.push({ label: sortedTags[i].label, ms: end - start });
     }
 
+    const hasExact = !!session.tag_tokens;
     const denom = session.duration_ms || 1;
     for (const b of bounds) {
       if (!b.label) continue;
       if (label && b.label !== label) continue;
-      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set(), tokens: 0, idleMs: 0 };
+      if (!perLabel[b.label]) perLabel[b.label] = { durationMs: 0, sessions: new Set(), tokens: 0, idleMs: 0, exact: true };
       perLabel[b.label].durationMs += b.ms;
       perLabel[b.label].sessions.add(session.session_id);
-      perLabel[b.label].tokens += Math.round(sessionTokens * (b.ms / denom));
+      if (!hasExact) {
+        perLabel[b.label].tokens += Math.round(sessionTokens * (b.ms / denom));
+        perLabel[b.label].exact = false;
+      }
+    }
+    if (hasExact) {
+      for (const [lbl, tt] of Object.entries(session.tag_tokens)) {
+        if (lbl === UNTAGGED) continue;
+        if (label && lbl !== label) continue;
+        if (!perLabel[lbl]) perLabel[lbl] = { durationMs: 0, sessions: new Set(), tokens: 0, idleMs: 0, exact: true };
+        perLabel[lbl].tokens += (tt.input_tokens ?? 0) + (tt.output_tokens ?? 0) + (tt.cache_read_tokens ?? 0) + (tt.cache_creation_tokens ?? 0);
+        perLabel[lbl].sessions.add(session.session_id);
+      }
     }
 
     for (const idleRow of idle ?? []) {
@@ -117,6 +138,7 @@ export async function buildReport(jsonlPath, { scope = 'all', label = null, now 
       sessions: perLabel[k].sessions.size,
       tokens: perLabel[k].tokens,
       idleMs: perLabel[k].idleMs,
+      exact: !!perLabel[k].exact,
     };
   }
   report.perLabel = perLabel;

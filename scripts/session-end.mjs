@@ -3,7 +3,7 @@ import path from 'node:path';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { readState, clearState } from './lib/state.mjs';
 import { appendJsonl } from './lib/jsonl.mjs';
-import { parseTranscript } from './lib/parse-transcript.mjs';
+import { parseTranscript, parseTranscriptTurns, bucketTurnsByTags } from './lib/parse-transcript.mjs';
 import { updateClaudeMd } from './lib/update-claude-md.mjs';
 import { buildReport } from './lib/report.mjs';
 import { fmtDuration, fmtTokens } from './lib/fmt.mjs';
@@ -73,12 +73,17 @@ async function main() {
   try {
     const state = await readState(cwd);
     if (!state) { process.exit(0); return; }
-    const totals = transcriptPath ? await parseTranscript(transcriptPath) : {
-      input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0,
-    };
+    const turns = transcriptPath ? await parseTranscriptTurns(transcriptPath) : [];
+    const totals = turns.reduce((acc, t) => ({
+      input_tokens: acc.input_tokens + t.input_tokens,
+      output_tokens: acc.output_tokens + t.output_tokens,
+      cache_read_tokens: acc.cache_read_tokens + t.cache_read_tokens,
+      cache_creation_tokens: acc.cache_creation_tokens + t.cache_creation_tokens,
+    }), { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 });
     const endTs = new Date().toISOString();
     const durationMs = new Date(endTs).getTime() - new Date(state.started_at).getTime();
     const tagsTouched = [...new Set((state.tag_history ?? []).map((t) => t.label).filter(Boolean))];
+    const tag_tokens = bucketTurnsByTags(turns, state.tag_history ?? [], endTs);
     const sessionRow = {
       ts: endTs,
       event: 'session',
@@ -89,6 +94,7 @@ async function main() {
       cwd,
       ...totals,
       tags_touched: tagsTouched,
+      tag_tokens,
     };
     const jsonlPath = path.join(cwd, '.claude', 'time-keeper.jsonl');
     await appendJsonl(jsonlPath, sessionRow);

@@ -87,7 +87,8 @@ async function cmdReport(cwd, args) {
   if (labels.length) {
     lines.push('', 'PER TAG');
     for (const [name, v] of labels) {
-      lines.push(`  ${name}  ${fmtDuration(v.durationMs)}${idleSuffix(v.idleMs)}  ~${fmtTokens(v.tokens)} tokens (est, pro-rated by duration)`);
+      const tokenLabel = v.exact ? `${fmtTokens(v.tokens)} tokens` : `~${fmtTokens(v.tokens)} tokens (est)`;
+      lines.push(`  ${name}  ${fmtDuration(v.durationMs)}${idleSuffix(v.idleMs)}  ${tokenLabel}`);
     }
   } else {
     lines.push('', '(no tagged segments in scope)');
