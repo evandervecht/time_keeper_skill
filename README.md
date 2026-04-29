@@ -34,6 +34,8 @@ Tagging marks the current chunk of work as a specific feature or bug ("fix-auth-
 
 > **⚠ Tag before the work, not after.** Per-tag tokens are computed from the assistant turns whose timestamp falls inside the tag's window. If you tag *after* you finish a piece of work (for example, naming a tag after a commit you just made), the tokens that produced that work belong to the *previous* tag — the new tag stays at 0 until your next round of work happens under it. Treat tags as labels for the work *about to start*, the same way you'd write a branch name before opening it.
 
+> **Don't use tags for version/release names.** Time-keeper tags label *work segments* — what you're doing now. Version names like `v1.9.4` describe *what shipped* and belong somewhere else (git tags, a `CHANGELOG.md`, commit messages, or nowhere). Mixing the two means tokens land in whatever tag was active when the version got named — usually the wrong place. Let the assistant auto-tag with content names (`boundary-selection-highlight`) and keep version names out of `/time-keeper:start`.
+
 ### 1. Slash command (explicit)
 
 ```
